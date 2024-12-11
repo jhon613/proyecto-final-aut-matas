@@ -1,0 +1,232 @@
+import tkinter as tk
+import random
+
+WIDTH = 650 
+HEIGHT = 650
+CELL_SIZE = 15
+GRID_WIDTH = WIDTH // CELL_SIZE
+GRID_HEIGHT = HEIGHT // CELL_SIZE
+
+EMPTY = 0
+VEGETATION = 1
+WATER = 2
+ROCK = 3
+FIRE = 4
+BURNT = 5
+
+HUMIDITY_LEVELS = 4
+
+COLORS = {
+    EMPTY: "white",
+    VEGETATION: "green",
+    WATER: "blue",
+    ROCK: "gray",
+    FIRE: "red",
+    BURNT: "brown"
+}
+
+root = tk.Tk()
+root.title("Simulación de Incendio Forestal")
+
+control_frame = tk.Frame(root)
+control_frame.pack(side="right", fill="y", padx=10, pady=10)
+
+canvas = tk.Canvas(root, width=WIDTH, height=HEIGHT, bg="white")
+canvas.pack(side="left", fill="both", expand=True)
+
+def create_grid():
+    return [[{'type': EMPTY, 'humidity': 0, 'fire_step': 0} for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
+
+def draw_grid(grid):
+    canvas.delete("all")
+    for y in range(GRID_HEIGHT):
+        for x in range(GRID_WIDTH):
+            cell = grid[y][x]
+            color = COLORS[cell['type']]
+            canvas.create_rectangle(x * CELL_SIZE, y * CELL_SIZE, (x + 1) * CELL_SIZE, (y + 1) * CELL_SIZE, fill=color, outline="black")
+
+def select_cell_type(event):
+    global cell_type
+    x = event.x // CELL_SIZE
+    y = event.y // CELL_SIZE
+    grid[y][x]['type'] = cell_type
+    draw_grid(grid)
+
+def set_cell_type(value):
+    global cell_type
+    cell_type = value
+
+def set_humidity(value):
+    global humidity_level
+    humidity_level = value
+
+def generate_group(grid, x, y, group_type, group_size):
+    queue = [(x, y)]
+    grid[y][x]['type'] = group_type
+    while queue and group_size > 0:
+        cx, cy = queue.pop(0)
+        for nx, ny in [(cx-1, cy), (cx+1, cy), (cx, cy-1), (cx, cy+1)]:
+            if 0 <= nx < GRID_WIDTH and 0 <= ny < GRID_HEIGHT and grid[ny][nx]['type'] == EMPTY:
+                grid[ny][nx]['type'] = group_type
+                queue.append((nx, ny))
+                group_size -= 1
+                if group_size == 0:
+                    break
+
+def generate_random_field():
+    global grid
+    grid = create_grid()
+
+    vegetation_proportion = vegetation_slider.get()
+    water_proportion = water_slider.get()
+
+    if vegetation_proportion + water_proportion > 100:
+        excess = vegetation_proportion + water_proportion - 100
+        vegetation_proportion -= excess // 2
+        water_proportion -= excess // 2
+
+    if vegetation_proportion < 0:
+        vegetation_proportion = 0
+    if water_proportion < 0:
+        water_proportion = 0
+    
+    rock_proportion = 100 - vegetation_proportion - water_proportion
+    
+    num_cells = GRID_WIDTH * GRID_HEIGHT
+    num_vegetation = int(num_cells * vegetation_proportion / 100) 
+    num_water = int(num_cells * water_proportion / 100)  
+    num_rock = num_cells - (num_vegetation + num_water)      
+ 
+    group_size = 0
+
+    while num_vegetation > 0:
+        x, y = random.randint(0, GRID_WIDTH - 1), random.randint(0, GRID_HEIGHT - 1)
+        group_size = random.randint(10, 50) 
+        generate_group(grid, x, y, VEGETATION, group_size)
+        num_vegetation -= group_size
+
+    while num_water > 0:
+        x, y = random.randint(0, GRID_WIDTH - 1), random.randint(0, GRID_HEIGHT - 1)
+        group_size = random.randint(5, 20) 
+        generate_group(grid, x, y, WATER, group_size)
+        num_water -= group_size
+
+
+    while num_rock > 0:
+        x, y = random.randint(0, GRID_WIDTH - 1), random.randint(0, GRID_HEIGHT - 1)
+        group_size = random.randint(5, 20) 
+        generate_group(grid, x, y, ROCK, group_size)
+        num_rock -= group_size
+
+    for y in range(GRID_HEIGHT):
+        for x in range(GRID_WIDTH):
+            if grid[y][x]['type'] == EMPTY:
+                grid[y][x]['type'] = ROCK 
+
+    draw_grid(grid)
+def propagate_fire():
+    global grid, simulation_running
+    if not simulation_running:
+        return
+    
+    humidity_level = humidity_slider.get()
+    
+    new_grid = [row[:] for row in grid]
+    
+    to_burn = []
+
+    for y in range(GRID_HEIGHT):
+        for x in range(GRID_WIDTH):
+            if grid[y][x]['type'] == FIRE:
+                for i in range(-1, 2):
+                    for j in range(-1, 2):
+                        nx, ny = x + i, y + j
+                        if 0 <= nx < GRID_WIDTH and 0 <= ny < GRID_HEIGHT:
+                            if grid[ny][nx]['type'] == VEGETATION:
+                                burning_neighbors = 0
+                                for ii in range(-1, 2):
+                                    for jj in range(-1, 2):
+                                        nnx, nny = nx + ii, ny + jj
+                                        if 0 <= nnx < GRID_WIDTH and 0 <= nny < GRID_HEIGHT:
+                                            if grid[nny][nnx]['type'] == FIRE:
+                                                burning_neighbors += 1
+                                if burning_neighbors >= (humidity_level + 1):
+                                    to_burn.append((nx, ny))
+    
+    for (x, y) in to_burn:
+        new_grid[y][x]['type'] = FIRE
+
+    for y in range(GRID_HEIGHT):
+        for x in range(GRID_WIDTH):
+            if new_grid[y][x]['type'] == FIRE:
+                new_grid[y][x]['fire_step'] += 1
+                if new_grid[y][x]['fire_step'] == 3:
+                    new_grid[y][x]['type'] = BURNT
+    
+    grid = new_grid
+    draw_grid(grid)
+
+    if simulation_running:
+        root.after(500, propagate_fire)
+
+
+
+def start_simulation():
+    global grid, simulation_running
+    draw_grid(grid)
+    
+
+    simulation_running = True
+    propagate_fire()
+
+def stop_simulation():
+    global simulation_running
+    simulation_running = False
+
+
+def reset_simulation():
+    global grid, simulation_running
+    generate_random_field()
+    simulation_running = False
+
+btn_veg = tk.Button(control_frame, text="Vegetación", command=lambda: set_cell_type(VEGETATION), width=10)
+btn_veg.pack(pady=5)
+
+btn_water = tk.Button(control_frame, text="Agua", command=lambda: set_cell_type(WATER), width=10)
+btn_water.pack(pady=5)
+
+btn_rock = tk.Button(control_frame, text="Roca", command=lambda: set_cell_type(ROCK), width=10)
+btn_rock.pack(pady=5)
+
+btn_fire = tk.Button(control_frame, text="Fuego", command=lambda: set_cell_type(FIRE), width=10)
+btn_fire.pack(pady=5)
+
+btn_start = tk.Button(control_frame, text="Iniciar Simulación", command=start_simulation, width=20)
+btn_start.pack(pady=5)
+
+btn_stop = tk.Button(control_frame, text="Parar Simulación", command=stop_simulation, width=20)
+btn_stop.pack(pady=5)
+
+btn_reset = tk.Button(control_frame, text="Reiniciar Simulación", command=reset_simulation, width=20)
+btn_reset.pack(pady=5)
+
+vegetation_slider = tk.Scale(control_frame, from_=0, to=100, orient="horizontal", label="Proporción Vegetación")
+vegetation_slider.set(60) 
+vegetation_slider.pack(pady=5)
+
+water_slider = tk.Scale(control_frame, from_=0, to=100, orient="horizontal", label="Proporción Agua")
+water_slider.set(20) 
+water_slider.pack(pady=5)
+
+humidity_slider = tk.Scale(control_frame, from_=0, to=3, orient="horizontal", label="Nivel de Humedad")
+humidity_slider.set(1)
+humidity_slider.pack(pady=5)
+
+grid = create_grid()
+
+generate_random_field()
+
+canvas.bind("<Button-1>", select_cell_type)
+draw_grid(grid)
+
+root.mainloop()
